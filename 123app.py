@@ -55,7 +55,7 @@ st.markdown(
 
 def analyze_and_visualize_file(file):
     try:
-        # Load data into Pandas DataFrame
+        # Determine file type and load data into a Pandas DataFrame
         if file.name.endswith('.xlsx') or file.name.endswith('.xls'):
             df = pd.read_excel(file)
         elif file.name.endswith('.csv'):
@@ -78,11 +78,11 @@ def analyze_and_visualize_file(file):
         st.write(df.describe())
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Identify numeric and categorical columns
+        # Automatically identify numeric and categorical columns
         numeric_columns = df.select_dtypes(include=['float64', 'int64']).columns
         categorical_columns = df.select_dtypes(include=['object', 'category']).columns
 
-        # Sidebar options
+        # Let the user choose the type of analysis
         st.sidebar.write("### Customization Options")
         chart_type = st.sidebar.selectbox(
             "Select Chart Type:",
@@ -90,14 +90,20 @@ def analyze_and_visualize_file(file):
         )
 
         if chart_type == "Histogram":
-            selected_column = st.sidebar.selectbox("Select Numeric Column for Histogram:", numeric_columns)
+            selected_column = st.sidebar.selectbox(
+                "Select Numeric Column for Histogram:",
+                numeric_columns
+            )
             if selected_column:
                 st.write(f"### Distribution of {selected_column}")
                 fig = px.histogram(df, x=selected_column, nbins=30, title=f"Distribution of {selected_column}", marginal="box")
                 st.plotly_chart(fig)
 
         elif chart_type == "Boxplot":
-            selected_column = st.sidebar.selectbox("Select Numeric Column for Boxplot:", numeric_columns)
+            selected_column = st.sidebar.selectbox(
+                "Select Numeric Column for Boxplot:",
+                numeric_columns
+            )
             if selected_column:
                 st.write(f"### Boxplot of {selected_column}")
                 fig = px.box(df, y=selected_column, title=f"Boxplot of {selected_column}")
@@ -125,31 +131,49 @@ def analyze_and_visualize_file(file):
             fig.update_layout(title="Correlation Heatmap")
             st.plotly_chart(fig)
 
-        # Clustering
+        # AI-based Analysis: Clustering
         st.sidebar.write("### AI Analysis")
         if st.sidebar.checkbox("Run Clustering Analysis"):
             clustering_algorithm = st.sidebar.selectbox("Select Clustering Algorithm:", ["K-Means", "DBSCAN", "Agglomerative Clustering"])
-            num_clusters = st.sidebar.slider("Select Number of Clusters:", 2, 10, 3)
-
-            scaler = StandardScaler()
-            scaled_data = scaler.fit_transform(df[numeric_columns].dropna())
 
             if clustering_algorithm == "K-Means":
-                model = KMeans(n_clusters=num_clusters, random_state=0)
-            elif clustering_algorithm == "DBSCAN":
-                model = DBSCAN(eps=0.5, min_samples=5)
-            else:
-                model = AgglomerativeClustering(n_clusters=num_clusters)
+                num_clusters = st.sidebar.slider("Select Number of Clusters:", 2, 10, 3)
+                scaler = StandardScaler()
+                scaled_data = scaler.fit_transform(df[numeric_columns].dropna())
 
-            df['Cluster'] = model.fit_predict(scaled_data)
+                kmeans = KMeans(n_clusters=num_clusters, random_state=0)
+                clusters = kmeans.fit_predict(scaled_data)
+
+            elif clustering_algorithm == "DBSCAN":
+                eps = st.sidebar.slider("Select EPS (Epsilon):", 0.1, 10.0, 0.5, 0.1)
+                min_samples = st.sidebar.slider("Select Minimum Samples:", 1, 20, 5)
+                scaler = StandardScaler()
+                scaled_data = scaler.fit_transform(df[numeric_columns].dropna())
+
+                dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+                clusters = dbscan.fit_predict(scaled_data)
+
+            elif clustering_algorithm == "Agglomerative Clustering":
+                num_clusters = st.sidebar.slider("Select Number of Clusters:", 2, 10, 3)
+                scaler = StandardScaler()
+                scaled_data = scaler.fit_transform(df[numeric_columns].dropna())
+
+                agg_clustering = AgglomerativeClustering(n_clusters=num_clusters)
+                clusters = agg_clustering.fit_predict(scaled_data)
+
+            df['Cluster'] = clusters
             st.write("### Clustering Results")
             st.write(df[['Cluster'] + list(numeric_columns)])
 
             if len(numeric_columns) >= 2:
-                fig = px.scatter(df, x=numeric_columns[0], y=numeric_columns[1], color="Cluster", title=f"Clusters Visualization ({clustering_algorithm})")
+                st.write("### Cluster Visualization")
+                fig = px.scatter(
+                    df, x=numeric_columns[0], y=numeric_columns[1], color="Cluster",
+                    title=f"Clusters Visualization ({clustering_algorithm})", template="plotly"
+                )
                 st.plotly_chart(fig)
 
-        # Predictive Modeling
+        # AI-based Analysis: Predictive Modeling
         if st.sidebar.checkbox("Run Predictive Modeling"):
             st.write("### Predictive Modeling")
             target = st.sidebar.selectbox("Select Target Column:", numeric_columns.union(categorical_columns))
@@ -160,16 +184,11 @@ def analyze_and_visualize_file(file):
                 if len(feature_columns) < 1:
                     st.warning("Not enough features for modeling.")
                 else:
-                    # Ensure X and y have the same number of samples
-                    df_cleaned = df.dropna(subset=[target] + feature_columns)
-
-                    # Define X and y
-                    X = df_cleaned[feature_columns]
-                    y = df_cleaned[target]
+                    X = df[feature_columns].dropna()
+                    y = df[target].dropna()
 
                     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-                    # Choose appropriate model
                     if df[target].dtype == 'object' or df[target].dtype.name == 'category':
                         model = RandomForestClassifier(random_state=42)
                     else:
@@ -185,7 +204,6 @@ def analyze_and_visualize_file(file):
                         st.write("#### Regression Metrics")
                         st.write(f"Mean Squared Error: {mean_squared_error(y_test, predictions):.2f}")
 
-                    # Feature Importance
                     st.write("#### Feature Importance")
                     importance = model.feature_importances_
                     feature_importance_df = pd.DataFrame({"Feature": feature_columns, "Importance": importance})
@@ -198,6 +216,8 @@ def analyze_and_visualize_file(file):
 
 # Streamlit app
 st.markdown("<h1 class='main-header'>Excel and CSV Data Analyzer with AI</h1>", unsafe_allow_html=True)
+st.write("Upload an Excel or CSV file to analyze and visualize its data with advanced features.")
+
 uploaded_file = st.file_uploader("Upload Excel or CSV File", type=["xlsx", "xls", "csv"])
 
 if uploaded_file:
