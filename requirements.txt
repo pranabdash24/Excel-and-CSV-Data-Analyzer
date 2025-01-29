@@ -4,4 +4,4 @@ plotly
 scikit-learn
 numpy
 openpyxl
-fbprophet
+prophet
