@@ -9,6 +9,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import classification_report, mean_squared_error
 import numpy as np
+import seaborn as sns
+from sklearn.linear_model import LinearRegression
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from prophet import Prophet
+from sklearn.model_selection import GridSearchCV
 
 # Custom CSS for styling
 st.markdown(
@@ -53,6 +58,45 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+def handle_missing_data(df):
+    st.sidebar.write("### Handle Missing Data")
+    missing_action = st.sidebar.selectbox(
+        "Select Action for Missing Data:",
+        ["Leave as it is", "Fill with Mean", "Fill with Median", "Fill with Mode"]
+    )
+    
+    if missing_action == "Fill with Mean":
+        df.fillna(df.mean(), inplace=True)
+    elif missing_action == "Fill with Median":
+        df.fillna(df.median(), inplace=True)
+    elif missing_action == "Fill with Mode":
+        df.fillna(df.mode().iloc[0], inplace=True)
+    
+    # Display missing data heatmap
+    st.write("### Missing Data Heatmap")
+    sns.heatmap(df.isnull(), cbar=False, cmap="viridis")
+    st.pyplot()
+
+    return df
+
+def detect_and_remove_outliers(df):
+    st.sidebar.write("### Outlier Detection & Removal")
+    outlier_method = st.sidebar.selectbox("Select Outlier Detection Method:", ["IQR", "Z-score", "None"])
+    
+    if outlier_method == "IQR":
+        Q1 = df.quantile(0.25)
+        Q3 = df.quantile(0.75)
+        IQR = Q3 - Q1
+        df = df[~((df < (Q1 - 1.5 * IQR)) | (df > (Q3 + 1.5 * IQR))).any(axis=1)]
+    elif outlier_method == "Z-score":
+        from scipy.stats import zscore
+        z_scores = np.abs(zscore(df.select_dtypes(include=[np.number])))
+        df = df[(z_scores < 3).all(axis=1)]
+    
+    st.write("### Data After Outlier Removal")
+    st.write(df)
+    return df
+
 def analyze_and_visualize_file(file):
     try:
         # Determine file type and load data into a Pandas DataFrame
@@ -77,6 +121,23 @@ def analyze_and_visualize_file(file):
         st.write("#### Basic Statistics:")
         st.write(df.describe())
         st.markdown("</div>", unsafe_allow_html=True)
+
+        # Handle Missing Data
+        df = handle_missing_data(df)
+
+        # Detect and remove outliers
+        df = detect_and_remove_outliers(df)
+
+        # Automated Data Insights
+        st.write("### Automated Data Insights")
+        for col in df.columns:
+            st.write(f"Column: {col}")
+            st.write(f"Unique Values: {df[col].nunique()}")
+            st.write(f"Missing Values: {df[col].isnull().sum()}")
+            if df[col].dtype in ['float64', 'int64']:
+                st.write(f"Mean: {df[col].mean()}")
+                st.write(f"Standard Deviation: {df[col].std()}")
+            st.write("-----")
 
         # Automatically identify numeric and categorical columns
         numeric_columns = df.select_dtypes(include=['float64', 'int64']).columns
@@ -167,7 +228,10 @@ def analyze_and_visualize_file(file):
 
             if len(numeric_columns) >= 2:
                 st.write("### Cluster Visualization")
-                fig = px.scatter(df, x=numeric_columns[0], y=numeric_columns[1], color="Cluster", title=f"Clusters Visualization ({clustering_algorithm})", template="plotly")
+                fig = px.scatter(
+                    df, x=numeric_columns[0], y=numeric_columns[1], color="Cluster",
+                    title=f"Clusters Visualization ({clustering_algorithm})", template="plotly"
+                )
                 st.plotly_chart(fig)
 
         # AI-based Analysis: Predictive Modeling
@@ -181,27 +245,46 @@ def analyze_and_visualize_file(file):
                 if len(feature_columns) < 1:
                     st.warning("Not enough features for modeling.")
                 else:
-                    df_clean = df.dropna(subset=[target] + feature_columns)
-                    X = df_clean[feature_columns]
-                    y = df_clean[target]
-
-                    st.write(f"Final X shape: {X.shape}, Final y shape: {y.shape}")
+                    X = df[feature_columns].dropna()
+                    y = df[target].dropna()
 
                     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-                    model = RandomForestClassifier(random_state=42) if df[target].dtype == 'object' else RandomForestRegressor(random_state=42)
+                    if df[target].dtype == 'object' or df[target].dtype.name == 'category':
+                        model = RandomForestClassifier(random_state=42)
+                    else:
+                        model = RandomForestRegressor(random_state=42)
+
                     model.fit(X_train, y_train)
                     predictions = model.predict(X_test)
 
+                    if df[target].dtype == 'object' or df[target].dtype.name == 'category':
+                        st.write("#### Classification Report")
+                        st.text(classification_report(y_test, predictions))
+                    else:
+                        st.write("#### Regression Metrics")
+                        st.write(f"Mean Squared Error: {mean_squared_error(y_test, predictions):.2f}")
+
                     st.write("#### Feature Importance")
                     importance = model.feature_importances_
-                    fig = px.bar(pd.DataFrame({"Feature": feature_columns, "Importance": importance}).sort_values(by="Importance", ascending=False), x="Importance", y="Feature", orientation='h', title="Feature Importance")
+                    feature_importance_df = pd.DataFrame({"Feature": feature_columns, "Importance": importance})
+                    feature_importance_df = feature_importance_df.sort_values(by="Importance", ascending=False)
+                    fig = px.bar(feature_importance_df, x="Importance", y="Feature", orientation='h', title="Feature Importance")
                     st.plotly_chart(fig)
+
+        # Export Option
+        if st.sidebar.button("Download Processed Data"):
+            df.to_csv('processed_data.csv', index=False)
+            st.write("Data saved as 'processed_data.csv'.")
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
+# Streamlit app
 st.markdown("<h1 class='main-header'>Excel and CSV Data Analyzer with AI</h1>", unsafe_allow_html=True)
+st.write("Upload an Excel or CSV file to analyze and visualize its data with advanced features.")
+
 uploaded_file = st.file_uploader("Upload Excel or CSV File", type=["xlsx", "xls", "csv"])
+
 if uploaded_file:
     analyze_and_visualize_file(uploaded_file)
