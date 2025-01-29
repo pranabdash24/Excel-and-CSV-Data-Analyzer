@@ -3,17 +3,21 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import io
-from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.metrics import classification_report, mean_squared_error
 import numpy as np
 import seaborn as sns
+from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.metrics import classification_report, mean_squared_error
 from sklearn.linear_model import LinearRegression
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from prophet import Prophet
-from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score, f1_score
 
 # Custom CSS for styling
 st.markdown(
@@ -62,7 +66,7 @@ def handle_missing_data(df):
     st.sidebar.write("### Handle Missing Data")
     missing_action = st.sidebar.selectbox(
         "Select Action for Missing Data:",
-        ["Leave as it is", "Fill with Mean", "Fill with Median", "Fill with Mode"]
+        ["Leave as is", "Fill with Mean", "Fill with Median", "Fill with Mode", "Fill with Custom Value"]
     )
     
     if missing_action == "Fill with Mean":
@@ -71,6 +75,10 @@ def handle_missing_data(df):
         df.fillna(df.median(), inplace=True)
     elif missing_action == "Fill with Mode":
         df.fillna(df.mode().iloc[0], inplace=True)
+    elif missing_action == "Fill with Custom Value":
+        custom_value = st.sidebar.text_input("Enter custom value:")
+        if custom_value:
+            df.fillna(custom_value, inplace=True)
     
     # Display missing data heatmap
     st.write("### Missing Data Heatmap")
@@ -96,6 +104,43 @@ def detect_and_remove_outliers(df):
     st.write("### Data After Outlier Removal")
     st.write(df)
     return df
+
+def time_series_analysis(df, date_column):
+    st.write("### Time Series Analysis")
+    df[date_column] = pd.to_datetime(df[date_column])
+    df.set_index(date_column, inplace=True)
+    
+    st.write("#### Rolling Average")
+    rolling_window = st.slider("Select Rolling Window Size:", 1, 30, 7)
+    df_rolling = df.rolling(window=rolling_window).mean()
+    fig = px.line(df_rolling, title=f"Rolling Average (Window={rolling_window})")
+    st.plotly_chart(fig)
+
+    st.write("#### Seasonal Decomposition")
+    from statsmodels.tsa.seasonal import seasonal_decompose
+    decomposition = seasonal_decompose(df.dropna(), model='additive', period=12)
+    fig = decomposition.plot()
+    st.pyplot()
+
+def model_comparison(X_train, X_test, y_train, y_test):
+    st.write("### Model Comparison")
+    models = {
+        "Random Forest": RandomForestClassifier(),
+        "Logistic Regression": LogisticRegression(),
+        "Decision Tree": DecisionTreeClassifier(),
+        "K-Nearest Neighbors": KNeighborsClassifier(),
+        "Support Vector Machine": SVC()
+    }
+    results = {}
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        results[name] = {
+            "Accuracy": accuracy_score(y_test, y_pred),
+            "F1 Score": f1_score(y_test, y_pred, average='weighted')
+        }
+    results_df = pd.DataFrame(results).T
+    st.write(results_df)
 
 def analyze_and_visualize_file(file):
     try:
