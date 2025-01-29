@@ -167,10 +167,7 @@ def analyze_and_visualize_file(file):
 
             if len(numeric_columns) >= 2:
                 st.write("### Cluster Visualization")
-                fig = px.scatter(
-                    df, x=numeric_columns[0], y=numeric_columns[1], color="Cluster",
-                    title=f"Clusters Visualization ({clustering_algorithm})", template="plotly"
-                )
+                fig = px.scatter(df, x=numeric_columns[0], y=numeric_columns[1], color="Cluster", title=f"Clusters Visualization ({clustering_algorithm})", template="plotly")
                 st.plotly_chart(fig)
 
         # AI-based Analysis: Predictive Modeling
@@ -184,41 +181,27 @@ def analyze_and_visualize_file(file):
                 if len(feature_columns) < 1:
                     st.warning("Not enough features for modeling.")
                 else:
-                    X = df[feature_columns].dropna()
-                    y = df[target].dropna()
+                    df_clean = df.dropna(subset=[target] + feature_columns)
+                    X = df_clean[feature_columns]
+                    y = df_clean[target]
+
+                    st.write(f"Final X shape: {X.shape}, Final y shape: {y.shape}")
 
                     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-                    if df[target].dtype == 'object' or df[target].dtype.name == 'category':
-                        model = RandomForestClassifier(random_state=42)
-                    else:
-                        model = RandomForestRegressor(random_state=42)
-
+                    model = RandomForestClassifier(random_state=42) if df[target].dtype == 'object' else RandomForestRegressor(random_state=42)
                     model.fit(X_train, y_train)
                     predictions = model.predict(X_test)
 
-                    if df[target].dtype == 'object' or df[target].dtype.name == 'category':
-                        st.write("#### Classification Report")
-                        st.text(classification_report(y_test, predictions))
-                    else:
-                        st.write("#### Regression Metrics")
-                        st.write(f"Mean Squared Error: {mean_squared_error(y_test, predictions):.2f}")
-
                     st.write("#### Feature Importance")
                     importance = model.feature_importances_
-                    feature_importance_df = pd.DataFrame({"Feature": feature_columns, "Importance": importance})
-                    feature_importance_df = feature_importance_df.sort_values(by="Importance", ascending=False)
-                    fig = px.bar(feature_importance_df, x="Importance", y="Feature", orientation='h', title="Feature Importance")
+                    fig = px.bar(pd.DataFrame({"Feature": feature_columns, "Importance": importance}).sort_values(by="Importance", ascending=False), x="Importance", y="Feature", orientation='h', title="Feature Importance")
                     st.plotly_chart(fig)
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
-# Streamlit app
 st.markdown("<h1 class='main-header'>Excel and CSV Data Analyzer with AI</h1>", unsafe_allow_html=True)
-st.write("Upload an Excel or CSV file to analyze and visualize its data with advanced features.")
-
 uploaded_file = st.file_uploader("Upload Excel or CSV File", type=["xlsx", "xls", "csv"])
-
 if uploaded_file:
     analyze_and_visualize_file(uploaded_file)
